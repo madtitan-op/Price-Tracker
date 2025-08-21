@@ -1,5 +1,7 @@
 package com.animesh.pricetracker.service;
 
+import com.animesh.pricetracker.dto.ProdRequestDTO;
+import com.animesh.pricetracker.dto.ProdResponseDTO;
 import com.animesh.pricetracker.model.TrackedProduct;
 import com.animesh.pricetracker.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,11 +28,30 @@ public class ProductService {
     private final ProductRepository prodRepo;
     private final NotificationService notiService;
     private final ExecutorService executorService = Executors.newCachedThreadPool();
-    private final Map<String, String> SELECTORS = Map.of(
+    private final Map<String, String> PRICE_SELECTORS = Map.of(
             "www.amazon.in", ".a-price-whole",
             "www.flipkart.com", ".Nx9bqj.CxhGGd.yKS4la"
 //            "dl.flipkart.com", ".Nx9bqj.CxhGGd.yKS4la"
     );
+
+    public ProdResponseDTO addProduct(ProdRequestDTO requestDTO) throws IOException {
+
+        TrackedProduct tp = toProduct(requestDTO);
+
+        if (PRICE_SELECTORS.containsKey(tp.getSite())) {
+            return toResponseDTO(prodRepo.save(tp));
+        }
+        else {
+            throw new IOException("Something went wrong");
+        }
+    }
+
+    public List<ProdResponseDTO> getAllProducts() {
+        List<TrackedProduct> allProds = prodRepo.findAll();
+        return allProds.stream()
+                .map(this::toResponseDTO)
+                .toList();
+    }
 
     public double checkPrice(int pid) {
         TrackedProduct product = prodRepo.findById(pid)
@@ -42,28 +63,33 @@ public class ProductService {
         }
     }
 
-    public TrackedProduct addProduct(TrackedProduct product) throws Exception{
+    public void deleteProduct(int pid) {
+        prodRepo.deleteById(pid);
+    }
+
+    public Set<String> getSupportedDomains() {
+        return PRICE_SELECTORS.keySet();
+    }
+
+/*    public TrackedProduct addProduct(TrackedProduct product) throws Exception {
         try {
             System.out.println("Expanding URL...");
             String expandedURL = expandURL(product.getUrl());
 
-            if (SELECTORS.containsKey(new URL(expandedURL).getHost())) {
+            String cleanURL = cleanURL(expandedURL);
+
+            if (PRICE_SELECTORS.containsKey(new URL(expandedURL).getHost())) {
                 product.setUrl(expandedURL);
-            }
-            else
+            } else
                 throw new IOException("This domain is currently not supported.");
         } catch (IOException e) {
             throw new RuntimeException("Could not expand URL: " + product.getUrl());
         }
 
         return prodRepo.save(product);
-    }
+    }*/
 
-    public Set<String> getSupportedDomains() {
-        return SELECTORS.keySet();
-    }
-
-    private String expandURL(String shortURL) throws IOException{
+    private String expandURL(String shortURL) throws IOException {
         URL url = new URL(shortURL);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 
@@ -89,10 +115,6 @@ public class ProductService {
         return shortURL;
     }
 
-    public void deleteProduct(int pid) {
-        prodRepo.deleteById(pid);
-    }
-
     @Scheduled(fixedRate = 1000 * 60 * 60)     //time interval is in ms - current: 1hr
     public void checkAllProducts() {
         System.out.println("Running Scheduled Price Check...");
@@ -100,12 +122,12 @@ public class ProductService {
 
         Map<String, List<TrackedProduct>> prodByDomain = products.stream()
                 .collect(Collectors.groupingBy(p -> {
-                            try {
-                                return new URL(p.getUrl()).getHost();
-                            } catch (Exception e) {
-                                return "invalid-domain";
-                            }
-                        }));
+                    try {
+                        return new URL(p.getUrl()).getHost();
+                    } catch (Exception e) {
+                        return "invalid-domain";
+                    }
+                }));
 
         for (Map.Entry<String, List<TrackedProduct>> entry : prodByDomain.entrySet()) {
             String domain = entry.getKey();
@@ -147,46 +169,70 @@ public class ProductService {
         }
     }
 
-    private double checkPrice(TrackedProduct trackedProduct) throws IOException{
-//        TrackedProduct trackedProduct = prodRepo.findById(prodId)
-//                .orElseThrow(() -> new RuntimeException("Product Doesn't Exist!!!"));
+    private double checkPrice(TrackedProduct trackedProduct) throws IOException {
 
-//        try {
+        URL url = new URL(trackedProduct.getUrl());
+        String domain = url.getHost();
+        String selector = PRICE_SELECTORS.get(domain);
 
-            URL url = new URL(trackedProduct.getUrl());
-            String domain = url.getHost();
-            String selector = SELECTORS.get(domain);
+        if (selector == null) {
+            throw new IOException("Domain not supported: " + domain);
+        }
 
-            if (selector == null) {
-                throw new IOException("Domain not supported: " + domain);
-            }
+        Document doc = Jsoup.connect(trackedProduct.getUrl()).get();
+        Element priceElement = doc.selectFirst(selector);
 
-            Document doc = Jsoup.connect(trackedProduct.getUrl()).get();
-            Element priceElement = doc.selectFirst(selector);
+        if (priceElement == null) {
+            throw new IOException("Could not find price element for " + url);
+        }
 
-            if (priceElement == null) {
-                throw new IOException("Could not find price element for " + url);
-            }
+        String rawPriceText = priceElement.text();
+        String priceText = rawPriceText.replaceAll("[^\\d.]", "");
+        double curPrice = Double.parseDouble(priceText);
 
-            String rawPriceText = priceElement.text();
-            String priceText = rawPriceText.replaceAll("[^\\d.]", "");
-            double curPrice = Double.parseDouble(priceText);
+        System.out.println("Current Price: " + curPrice + " : " + trackedProduct.getUrl());
 
-            System.out.println("Current Price: " + curPrice + " : " + trackedProduct.getUrl());
-
-            if (curPrice <= trackedProduct.getTargetPrice()) {
-                notiService.sendPriceAlert(trackedProduct);
-            }
-            return curPrice;
-
-//        } catch (IOException e) {
-//            System.err.println("Error fetching URL: " + trackedProduct.getUrl());
-//            e.printStackTrace();
-//        } catch (Exception e) {
-//            System.err.println("Error parsing product: " + trackedProduct.getUrl());
-//            e.printStackTrace();
-//        }
-//
-//        return -1;
+        if (curPrice <= trackedProduct.getTargetPrice()) {
+            notiService.sendPriceAlert(trackedProduct);
+        }
+        return curPrice;
     }
+
+    private TrackedProduct toProduct(ProdRequestDTO dto) throws IOException {
+        String strURL = expandURL(dto.url());
+        URL url = new URL(strURL);
+        String cleanUrl = url.getProtocol() + "://" + url.getHost() + url.getPath();
+
+        return new TrackedProduct(
+                extractProductId(cleanUrl),
+                url.getHost(),
+                cleanUrl,
+                dto.userEmail(),
+                dto.targetPrice()
+        );
+    }
+
+    private ProdResponseDTO toResponseDTO(TrackedProduct product) {
+        return new ProdResponseDTO(
+                product.getSid(),
+                product.getSite(),
+                product.getUrl(),
+                product.getTargetPrice()
+        );
+    }
+
+    private String extractProductId(String urlString) {
+        int lastSlashIndex = urlString.lastIndexOf('/');
+
+        if (lastSlashIndex != -1 && lastSlashIndex < urlString.length() - 1) {
+            return urlString.substring(lastSlashIndex + 1);
+        }
+
+        return null;
+    }
+
+ /*   private String cleanURL(String strURL) throws MalformedURLException {
+        URL url = new URL(strURL);
+        return url.getProtocol() + "://" + url.getHost() + url.getPath();
+    }*/
 }

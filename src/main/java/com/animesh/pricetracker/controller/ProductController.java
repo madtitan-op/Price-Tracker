@@ -1,11 +1,14 @@
 package com.animesh.pricetracker.controller;
 
-import com.animesh.pricetracker.model.TrackedProduct;
+import com.animesh.pricetracker.dto.ProdRequestDTO;
+import com.animesh.pricetracker.dto.ProdResponseDTO;
 import com.animesh.pricetracker.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("api/products")
@@ -15,16 +18,26 @@ public class ProductController {
     private final ProductService prodService;
 
     @PostMapping("add")
-    public ResponseEntity<?> addProduct(@RequestBody TrackedProduct product) {
+    public ResponseEntity<?> addProduct(@RequestBody ProdRequestDTO requestDTO) {
         try {
-            TrackedProduct tProduct = prodService.addProduct(product);
-            return new ResponseEntity<>(tProduct, HttpStatus.CREATED);
+            ProdResponseDTO responseDTO = prodService.addProduct(requestDTO);
+            return new ResponseEntity<>(responseDTO, HttpStatus.CREATED);
         } catch (Exception e) {
             return new ResponseEntity<>(
                     e.getMessage() + "\nDomains Currently Supported: " + prodService.getSupportedDomains().toString(),
                     HttpStatus.BAD_REQUEST
             );
         }
+    }
+
+    @GetMapping("all")
+    public ResponseEntity<?> getAllProducts() {
+        List<ProdResponseDTO> products= prodService.getAllProducts();
+        if (!products.isEmpty())
+            return new ResponseEntity<>(products, HttpStatus.OK);
+
+        else
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
     }
 
     @GetMapping("check-price")

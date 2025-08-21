@@ -11,6 +11,12 @@ public class TrackedProduct {
     @GeneratedValue(strategy=GenerationType.IDENTITY)
     private int id;
 
+    @Column(nullable = false, unique = true)
+    private String sid;     //id of product on their respective site
+
+    @Column(nullable = false)
+    private String site;    // site on which product is listed
+
     @Column(nullable = false, columnDefinition = "TEXT")
     private String url;
 
@@ -20,10 +26,12 @@ public class TrackedProduct {
     @Column(nullable = false)
     private Double targetPrice;
 
-    public TrackedProduct(String url, String userEmail, Double price) {
+    public TrackedProduct(String sid, String site, String url, String userEmail, Double targetPrice) {
+        this.sid = sid;
+        this.site = site;
         this.url = url;
         this.userEmail = userEmail;
-        this.targetPrice = price;
+        this.targetPrice = targetPrice;
     }
 
     public TrackedProduct() {}
