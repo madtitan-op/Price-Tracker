@@ -6,4 +6,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProductRepository extends JpaRepository<TrackedProduct, Integer> {
+    boolean existsTrackedProductBySid(String sid);
 }

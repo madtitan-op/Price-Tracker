@@ -2,6 +2,7 @@ package com.animesh.pricetracker.controller;
 
 import com.animesh.pricetracker.dto.ProdRequestDTO;
 import com.animesh.pricetracker.dto.ProdResponseDTO;
+import com.animesh.pricetracker.exception.ProductAlreadyExists;
 import com.animesh.pricetracker.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -22,9 +23,11 @@ public class ProductController {
         try {
             ProdResponseDTO responseDTO = prodService.addProduct(requestDTO);
             return new ResponseEntity<>(responseDTO, HttpStatus.CREATED);
+        } catch (ProductAlreadyExists e) {
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
         } catch (Exception e) {
             return new ResponseEntity<>(
-                    e.getMessage() + "\nDomains Currently Supported: " + prodService.getSupportedDomains().toString(),
+                    "\nDomains Currently Supported: " + prodService.getSupportedDomains().toString(),
                     HttpStatus.BAD_REQUEST
             );
         }
@@ -33,11 +36,8 @@ public class ProductController {
     @GetMapping("all")
     public ResponseEntity<?> getAllProducts() {
         List<ProdResponseDTO> products= prodService.getAllProducts();
-        if (!products.isEmpty())
-            return new ResponseEntity<>(products, HttpStatus.OK);
 
-        else
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        return new ResponseEntity<>(products, HttpStatus.OK);
     }
 
     @GetMapping("check-price")

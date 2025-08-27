@@ -88,40 +88,16 @@ Open a terminal in the project's root directory and run the following Maven comm
 The application will start on `http://localhost:8080`.
 
 -----
-
 ## API Endpoints
 
 The API provides endpoints to manage tracked products. The base URL is `/api/products`.
 
-### Add a Product to Track
-
-* **URL**: `/api/products/add`
-* **Method**: `POST`
-* **Request Body**:
-  ```json
-  {
-    "url": "https://www.amazon.in/dp/B0...",
-    "targetPrice": 49999.00,
-    "userEmail": "example@email.com"
-  }
-  ```
-* **Response**: `201 CREATED` with the saved product details on success, or `400 BAD REQUEST` if the URL's domain is not supported.
-
-### Manually Check a Product's Price
-
-* **URL**: `/api/products/check-price`
-* **Method**: `GET`
-* **Query Parameter**: `pid` (the product's integer ID)
-* **Example**: `GET http://localhost:8080/api/products/check-price?pid=1`
-* **Response**: `200 OK` with the current price, or `500 INTERNAL_SERVER_ERROR` if the price could not be scraped.
-
-### Delete a Tracked Product
-
-* **URL**: `/api/products/delete/{pid}`
-* **Method**: `DELETE`
-* **Path Variable**: `pid` (the product's integer ID)
-* **Example**: `DELETE http://localhost:8080/api/products/delete/1`
-* **Response**: `200 OK` on successful deletion.
+| Method | Path                 | Description                                                                                             | Request Body                                                              | Success Response                                      |
+| :----- |:---------------------| :------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------ | :---------------------------------------------------- |
+| `POST` | `/add`               | Adds a new product to track. The URL is expanded, sanitized, and validated against supported domains. | `{ "url": "...", "targetPrice": ..., "userEmail": "..." }`                 | `201 CREATED` with the saved product DTO.               |
+| `GET`  | `/all`               | Retrieves a list of all products currently being tracked.                                               | (None)                                                                    | `200 OK` with a list of product DTOs (can be empty).    |
+| `GET`  | `/check-price?pid=1` | Manually triggers a price check for a single product by its ID.                                         | (None)                                                                    | `200 OK` with the current price as a number.            |
+| `DELETE`| `/delete/{pid}`     | Stops tracking a product by its ID.                                                                     | (None)                                                                    | `200 OK` with no body.                                  |
 
 -----
 

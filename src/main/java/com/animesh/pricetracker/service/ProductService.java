@@ -2,6 +2,8 @@ package com.animesh.pricetracker.service;
 
 import com.animesh.pricetracker.dto.ProdRequestDTO;
 import com.animesh.pricetracker.dto.ProdResponseDTO;
+import com.animesh.pricetracker.exception.ProductAlreadyExists;
+import com.animesh.pricetracker.exception.ScrapingFailedException;
 import com.animesh.pricetracker.model.TrackedProduct;
 import com.animesh.pricetracker.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,12 +15,15 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -31,7 +36,6 @@ public class ProductService {
     private final Map<String, String> PRICE_SELECTORS = Map.of(
             "www.amazon.in", ".a-price-whole",
             "www.flipkart.com", ".Nx9bqj.CxhGGd.yKS4la"
-//            "dl.flipkart.com", ".Nx9bqj.CxhGGd.yKS4la"
     );
 
     public ProdResponseDTO addProduct(ProdRequestDTO requestDTO) throws IOException {
@@ -39,6 +43,9 @@ public class ProductService {
         TrackedProduct tp = toProduct(requestDTO);
 
         if (PRICE_SELECTORS.containsKey(tp.getSite())) {
+            if (prodRepo.existsTrackedProductBySid(tp.getSid())) {
+                throw new ProductAlreadyExists("Product already added");
+            }
             return toResponseDTO(prodRepo.save(tp));
         }
         else {
@@ -101,9 +108,6 @@ public class ProductService {
         connection.connect();
 
         int responseCode = connection.getResponseCode();
-
-        System.out.println(responseCode);
-
         if (responseCode >= 300 && responseCode < 400) {
             String redirectedURL = connection.getHeaderField("Location");
             if (redirectedURL != null) {
@@ -151,20 +155,18 @@ public class ProductService {
             TrackedProduct prod = prods.get(i);
 
             try {
-                System.out.println("Checking price for: " + prod.getUrl());
+                System.out.println("Checking price for: " + prod.getSid());
                 checkPrice(prod);
+            } catch (ScrapingFailedException e) {
+                try {
+                    long delay = 100000 + (long) (Math.random() * 15000);
+                    Thread.sleep(delay);
+                    i--;
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
             } catch (IOException e) {
                 System.out.println("Failed price check for: " + prod.getUrl());
-
-                if (e.getMessage().startsWith("Could")) {
-                    try {
-                        long delay = 100000 + (long) (Math.random() * 15000);
-                        Thread.sleep(delay);
-                        i--;
-                    } catch (InterruptedException ex) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
             }
         }
     }
@@ -183,14 +185,14 @@ public class ProductService {
         Element priceElement = doc.selectFirst(selector);
 
         if (priceElement == null) {
-            throw new IOException("Could not find price element for " + url);
+            throw new ScrapingFailedException("Could not find price element for " + url);
         }
 
         String rawPriceText = priceElement.text();
         String priceText = rawPriceText.replaceAll("[^\\d.]", "");
         double curPrice = Double.parseDouble(priceText);
 
-        System.out.println("Current Price: " + curPrice + " : " + trackedProduct.getUrl());
+        System.out.println("Current Price: " + curPrice + " : " + trackedProduct.getSid());
 
         if (curPrice <= trackedProduct.getTargetPrice()) {
             notiService.sendPriceAlert(trackedProduct);
@@ -214,6 +216,7 @@ public class ProductService {
 
     private ProdResponseDTO toResponseDTO(TrackedProduct product) {
         return new ProdResponseDTO(
+                product.getId(),
                 product.getSid(),
                 product.getSite(),
                 product.getUrl(),
@@ -221,7 +224,23 @@ public class ProductService {
         );
     }
 
-    private String extractProductId(String urlString) {
+    private String extractProductId(String urlString) throws MalformedURLException {
+
+        String exp;
+        URL url = new URL(urlString);
+
+        if (url.getHost().equals("www.amazon.in")) {
+            exp = "dp/([A-Z0-9]{10})";
+        }
+        else exp = "/p/itm([a-z0-9]{13})";
+
+        Pattern pattern = Pattern.compile(exp);
+        Matcher matcher = pattern.matcher(urlString);
+
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
         int lastSlashIndex = urlString.lastIndexOf('/');
 
         if (lastSlashIndex != -1 && lastSlashIndex < urlString.length() - 1) {
