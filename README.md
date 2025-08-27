@@ -99,6 +99,8 @@ The API provides endpoints to manage tracked products. The base URL is `/api/pro
 | `GET`  | `/check-price?pid=1` | Manually triggers a price check for a single product by its ID.                                         | (None)                                                                    | `200 OK` with the current price as a number.            |
 | `DELETE`| `/delete/{pid}`     | Stops tracking a product by its ID.                                                                     | (None)                                                                    | `200 OK` with no body.                                  |
 
+_Note: Visit `localhost:8080/swagger-ui/index.html` after starting the service to get detailed interactive API documentation._
+
 -----
 
 ## Limitations
